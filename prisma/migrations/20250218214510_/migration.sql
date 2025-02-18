@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "SoroswapPairs" ALTER COLUMN "reserveA" SET DATA TYPE BIGINT,
+ALTER COLUMN "reserveB" SET DATA TYPE BIGINT;
