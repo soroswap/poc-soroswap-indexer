@@ -7,7 +7,7 @@ import {
 } from "soroban-toolkit";
 import { isMainThread, Worker } from "worker_threads";
 import { toolkit } from "./toolkit";
-import { PairEntry } from "./types";
+import { PairEntry, WorkerResult } from "./types";
 
 dotenv.config();
 
@@ -32,70 +32,60 @@ async function main() {
         const pairs = await prisma.soroswapPairs.findMany({});
         // Add your contract indexing logic here
 
-        const half = Math.ceil(pairs.length / 2);
-        const pairsChunks = [pairs.slice(0, half), pairs.slice(half)];
+        const totalWorkers = 2;
+        const parts = Math.ceil(pairs.length / totalWorkers);
+        const pairsChunks = [pairs.slice(0, parts), pairs.slice(parts)];
+  
         //Spawn workers
-        if(isMainThread){
+        if (isMainThread) {
+          const parsedSyncEvents: WorkerResult[] = [];
+          
           // Create workers
+          const workers: Worker[] = [];
+          for (let i = 0; i < totalWorkers; i++) {
+            //Create a new instance for each worker
             const worker = new Worker(__filename, {
               workerData: {
-                pairs: pairsChunks[0],
+                pairs: pairsChunks[i],
                 lastSequence
               },
             });
 
             //Listen worker messages
-            worker.on('message', (result: any) => {
-              console.log(`🟢Worker result:`);
-              console.log(result);
+            worker.on('message', async (result: WorkerResult[]) => {
+              if(result.length === 0){
+                console.log(`No events received from worker ${i}...`);
+              } else if (result.length != 0) {
+                console.log(`🟡 Sync result from worker ${i}`);
+                await syncDB(result);
+              }
             });
-      
+
             //Listen worker errors
             worker.on('error', (error: Error) => {
-              console.log(error)
-              console.error(`Worker error: ${error.message}`);
+              console.log(error);
+              console.error(`Worker ${i} error: ${error.message}`);
             });
-      
+
             //Listen worker exit
             worker.on('exit', (code: number) => {
               if (code !== 0) {
-                  console.error(`Worker finished with error code: ${code}`);
+                  console.error(`Worker ${i} closed with error code: ${code}`);
               } else {
-                  console.log('Worker finished Ok.');
+                  console.log(`Worker ${i} closed Ok.`);
               }
             });
+            //Push worker to workers array
+            workers.push(worker);
+          }
 
-            //Send data to worker
-            worker.postMessage({ pairs: pairsChunks[0], lastSequence });
+          //Call every worker and send the data
+          workers.forEach((worker, i) => {
+            worker.postMessage({ pairs: pairsChunks[i], lastSequence });
+          });
 
-            // Define the second worker (It will do the same that the first one but in second thread)
-            const worker_1 = new Worker(__filename, {
-              workerData: {
-                pairs: pairsChunks[1],
-                lastSequence
-              },
-            });
-            worker_1.on('message', (result: any) => {
-              console.log(`🟡Worker 1 result:`);
-              console.log(result);
-            });
-      
-            worker_1.on('error', (error: Error) => {
-              console.log(error)
-              console.error(`Worker 1 error: ${error.message}`);
-            });
-      
-            worker_1.on('exit', (code: number) => {
-              if (code !== 0) {
-                  console.error(`Worker 1 finished with error code: ${code}`);
-              } else {
-                  console.log('Worker 1 finished Ok.');
-              }
-            });
-            worker_1.postMessage({ pairs: pairsChunks[1], lastSequence });
-            
         } else {
-          // Este es el hilo del worker
+          // Require worker file
           require('./worker');
         }
       }
@@ -109,6 +99,20 @@ async function main() {
   }
 }
 
+const syncDB = async (newPairs: WorkerResult[]) => {
+  for (let i = 0; i < newPairs.length; i++) {
+    const pair = newPairs[i];
+    console.log('✅Updating pair:')
+    console.log(pair);
+    await prisma.soroswapPairs.update({
+      where: { address: pair.address },
+      data: {
+        reserveA: pair.reserveA,
+        reserveB: pair.reserveB,
+      },
+    });
+  }
+};
 const getAllPairs = async (toolkit: SorobanToolkit) => {
   const raw_pairs_length = await invokeCustomContract(
     toolkit,
@@ -181,5 +185,6 @@ const getAllPairs = async (toolkit: SorobanToolkit) => {
     }
   }
 };
+
 
 main();

@@ -8,11 +8,11 @@ import { exit } from 'process';
 if (parentPort) {
   //Listen for messages from the parent thread
   parentPort.on('message', async (data: any) => {
-      // Get pairs and last sequence from the parent thread
-      const { pairs, lastSequence } = data;
-      
-      // Fetch events for the pairs
-      await getPairsEvents(pairs, lastSequence); 
+    // Get pairs and last sequence from the parent thread
+    const { pairs, lastSequence } = data;
+    
+    // Fetch events for the pairs
+    await getPairsEvents(pairs, lastSequence); 
   });
 }
 
@@ -50,9 +50,10 @@ async function getPairsEvents(pairs: any[], ledger: number) {
     }
   })).catch(error => {
     console.error("Error fetching events:", error);
+  }).finally(() => {
+    // Send the events to the parent thread
+    parentPort?.postMessage(events);
   });
-  // Send the events to the parent thread
-  parentPort?.postMessage(events);
   // Close thread
   exit(0);
 }
