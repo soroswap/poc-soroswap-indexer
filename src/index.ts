@@ -2,55 +2,98 @@ import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
 import * as StellarSdk from "@stellar/stellar-sdk";
 import {
-  createToolkit,
   invokeCustomContract,
   SorobanToolkit,
 } from "soroban-toolkit";
+import { isMainThread, Worker } from "worker_threads";
+import { toolkit } from "./toolkit";
+import { PairEntry } from "./types";
 
 dotenv.config();
 
 const prisma = new PrismaClient();
-const toolkitLoader = createToolkit({
-  adminSecret: process.env.ADMIN_SECRET_KEY!,
-  customNetworks: [
-    {
-      network: "mainnet",
-      friendbotUrl: "",
-      horizonRpcUrl:
-        "https://rpc.ankr.com/premium-http/stellar_horizon/670aa62bb995fe0c0e45b316b0c4aca229b2cf47a6a8f44c7803e79c11cf8f5f",
-      sorobanRpcUrl:
-        "https://rpc.ankr.com/stellar_soroban/670aa62bb995fe0c0e45b316b0c4aca229b2cf47a6a8f44c7803e79c11cf8f5f",
-      networkPassphrase: "Public Global Stellar Network ; September 2015",
-    },
-  ],
-  verbose: "full",
-});
+
 
 const FactoryContract =
   "CA4HEQTL2WPEUYKYKCDOHCDNIV4QHNJ7EL4J4NQ6VADP7SYHVRYZ7AW2";
 
 async function main() {
-  const toolkit = toolkitLoader.getNetworkToolkit("mainnet");
-
   getAllPairs(toolkit);
 
   try {
-    console.log("Connecting to database...");
     let lastSequence = 0;
-
+    const pairs: PairEntry[] = await prisma.soroswapPairs.findMany({});
+ 
     while (true) {
       const ledger = await toolkit.rpc.getLatestLedger();
       if (ledger.sequence !== lastSequence) {
         lastSequence = ledger.sequence;
-        console.log("Ledger Sequence:", ledger.sequence);
-
         // Fetch all pairs
         const pairs = await prisma.soroswapPairs.findMany({});
-        console.log("Pairs:", pairs);
-
         // Add your contract indexing logic here
-      }
 
+        const half = Math.ceil(pairs.length / 2);
+        const pairsChunks = [pairs.slice(0, half), pairs.slice(half)];
+        //Spawn workers
+        if(isMainThread){
+          // Create workers
+            const worker = new Worker(__filename, {
+              workerData: {
+                pairs: pairsChunks[0],
+                lastSequence
+              },
+            });
+
+            worker.on('message', (result: any) => {
+              console.log(`🟢Worker result:`);
+              console.log(result);
+            });
+      
+            worker.on('error', (error: Error) => {
+              console.log(error)
+              console.error(`Worker error: ${error.message}`);
+            });
+      
+            worker.on('exit', (code: number) => {
+              if (code !== 0) {
+                  console.error(`Worker finished with error code: ${code}`);
+              } else {
+                  console.log('Worker finished Ok.');
+              }
+            });
+
+            worker.postMessage({ pairs: pairsChunks[0], lastSequence });
+
+            const worker_1 = new Worker(__filename, {
+              workerData: {
+                pairs: pairsChunks[1],
+                lastSequence
+              },
+            });
+            worker_1.on('message', (result: any) => {
+              console.log(`🟡Worker 1 result:`);
+              console.log(result);
+            });
+      
+            worker_1.on('error', (error: Error) => {
+              console.log(error)
+              console.error(`Worker 1 error: ${error.message}`);
+            });
+      
+            worker_1.on('exit', (code: number) => {
+              if (code !== 0) {
+                  console.error(`Worker 1 finished with error code: ${code}`);
+              } else {
+                  console.log('Worker 1 finished Ok.');
+              }
+            });
+            worker_1.postMessage({ pairs: pairsChunks[1], lastSequence });
+            
+        } else {
+          // Este es el hilo del worker
+          require('./worker');
+        }
+      }
       // Delay to avoid overwhelming the server
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
