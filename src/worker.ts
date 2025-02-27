@@ -6,9 +6,12 @@ import { exit } from 'process';
 
 
 if (parentPort) {
+  //Listen for messages from the parent thread
   parentPort.on('message', async (data: any) => {
+      // Get pairs and last sequence from the parent thread
       const { pairs, lastSequence } = data;
-      console.log(`Scanning for pairs events from ledger:`, lastSequence);
+      
+      // Fetch events for the pairs
       await getPairsEvents(pairs, lastSequence); 
   });
 }
@@ -20,7 +23,7 @@ async function getPairsEvents(pairs: any[], ledger: number) {
     chunkedPairs.push(pairs.slice(i, i + 5).map(pair => pair.address));
   }
   let events: WorkerResult[] = [];
-  // Fetch events for each chunk
+  // Fetch events for each chunk, and push the events to the events array
   await Promise.allSettled(chunkedPairs.map(async (chunk) => {
     const raw_events_chunk = await toolkit.rpc.getEvents({
       startLedger: ledger - 1,
@@ -48,6 +51,8 @@ async function getPairsEvents(pairs: any[], ledger: number) {
   })).catch(error => {
     console.error("Error fetching events:", error);
   });
+  // Send the events to the parent thread
   parentPort?.postMessage(events);
+  // Close thread
   exit(0);
 }
