@@ -8,11 +8,12 @@ import {
 import { isMainThread, Worker } from "worker_threads";
 import { toolkit } from "./toolkit";
 import { PairEntry, WorkerResult } from "./types";
+import os from 'os';
 
 dotenv.config();
 
 const prisma = new PrismaClient();
-
+const totalWorkers = os.cpus().length;
 
 const FactoryContract =
   "CA4HEQTL2WPEUYKYKCDOHCDNIV4QHNJ7EL4J4NQ6VADP7SYHVRYZ7AW2";
@@ -28,18 +29,18 @@ async function main() {
       const ledger = await toolkit.rpc.getLatestLedger();
       if (ledger.sequence !== lastSequence) {
         lastSequence = ledger.sequence;
-        // Fetch all pairs
-        const pairs = await prisma.soroswapPairs.findMany({});
         // Add your contract indexing logic here
 
-        const totalWorkers = 2;
         const parts = Math.ceil(pairs.length / totalWorkers);
-        const pairsChunks = [pairs.slice(0, parts), pairs.slice(parts)];
-  
+        const pairsChunks: any[] = [];
+        for (let i = 0; i < totalWorkers; i++) {
+          const start = i * parts;
+          const end = start + parts;
+          pairsChunks.push(pairs.slice(start, end));
+        }
         //Spawn workers
         if (isMainThread) {
-          const parsedSyncEvents: WorkerResult[] = [];
-          
+
           // Create workers
           const workers: Worker[] = [];
           for (let i = 0; i < totalWorkers; i++) {
@@ -49,6 +50,11 @@ async function main() {
                 pairs: pairsChunks[i],
                 lastSequence
               },
+            });
+
+            //Hello world from worker
+            worker.on('online', () => {
+              console.log(`Worker ${i} running...`);
             });
 
             //Listen worker messages

@@ -1,5 +1,5 @@
 import { scValToNative } from '@stellar/stellar-sdk';
-import { parentPort, workerData } from 'worker_threads';
+import { parentPort } from 'worker_threads';
 import { toolkit } from './toolkit';
 import { WorkerResult } from './types';
 import { exit } from 'process';
@@ -10,7 +10,9 @@ if (parentPort) {
   parentPort.on('message', async (data: any) => {
     // Get pairs and last sequence from the parent thread
     const { pairs, lastSequence } = data;
-    
+    if(!pairs){
+      exit(0);
+    }
     // Fetch events for the pairs
     await getPairsEvents(pairs, lastSequence); 
   });
