@@ -24,5 +24,12 @@
 
 4. **Start the server**: Finally, start the development server with:
   ```bash
-  yarn dev:exp
+  yarn dev
   ```
+
+## Inspect the database
+Once the app and database are running, you can inspect the database by opening a new terminal and running the following command:
+```bash
+yarn prisma studio
+```
+this will start the Prisma Studio at port 5555.
