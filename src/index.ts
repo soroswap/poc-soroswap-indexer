@@ -44,16 +44,19 @@ async function main() {
               },
             });
 
+            //Listen worker messages
             worker.on('message', (result: any) => {
               console.log(`🟢Worker result:`);
               console.log(result);
             });
       
+            //Listen worker errors
             worker.on('error', (error: Error) => {
               console.log(error)
               console.error(`Worker error: ${error.message}`);
             });
       
+            //Listen worker exit
             worker.on('exit', (code: number) => {
               if (code !== 0) {
                   console.error(`Worker finished with error code: ${code}`);
@@ -62,8 +65,10 @@ async function main() {
               }
             });
 
+            //Send data to worker
             worker.postMessage({ pairs: pairsChunks[0], lastSequence });
 
+            // Define the second worker (It will do the same that the first one but in second thread)
             const worker_1 = new Worker(__filename, {
               workerData: {
                 pairs: pairsChunks[1],
